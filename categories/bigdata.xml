@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Programmer's notebook (BigData)</title><link>http://ashishrv.github.io/</link><description></description><atom:link href="http://ashishrv.github.io/categories/bigdata.xml" type="application/rss+xml" rel="self"></atom:link><language>en</language><lastBuildDate>Sun, 09 Mar 2014 23:17:15 GMT</lastBuildDate><generator>Nikola &lt;http://getnikola.com/&gt;</generator><docs>http://blogs.law.harvard.edu/tech/rss</docs><item><title>Ingest data from database into Hadoop with Sqoop #2</title><link>http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-2/</link><description>&lt;div&gt;&lt;p&gt;Here, I explore few other variations for importing data from database into HDFS.
+This is a continuation of &lt;a class="reference external" href="http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-1/"&gt;previous article&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;Previous sqoop command listed were good for one time fetch when you want to import all the current data for a table in database.&lt;/p&gt;
+&lt;p&gt;A more practical workflow is to fetch data regularly and incrementally into HDFS for analysis. You do not want to skip any previously imported data. For this you have to mark a column for incremental import and also provide an initial value. This column mostly happens to be time-stamp.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+&lt;/pre&gt;
+&lt;p&gt;At the end of the execution, you will have to note down the lastmodified value from the output&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+--last-value xxxxxxxxx
+&lt;/pre&gt;
+&lt;p&gt;and use it in next execution of the command. You can avoid noting down this value and changing your command for subsequent execution by saving your command as "Sqoop Job".&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;Save sqoop commands as jobs&lt;/em&gt;&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop job
+             --create JOBNAME
+             -- import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;List and delete sqoop jobs&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;Now it is pretty easy to list sqoop jobs&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop job --list
+sqoop job --delete JOB_NAME
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Execute sqoop jobs&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;There is one caveat though while executing sqoop jobs.
+It will prompt for password input and if you are thinking of automation,
+you will have to make provisions for that:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop job --exec JOB_NAME
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Other useful configurations&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;There are few other useful command configuration which comes handy during data import.
+Some of the columns in the table might be a clob data which could contain free running text including the default delimiter and field separator.
+To make sure that I can parse the data in HDFS unambiguously,
+I try to provide field separator and also escape value.:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --fields-terminated-by '\001'
+             --escaped-by \\
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Output data format&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;So far I have imported data as text files as it is easy to process via several means.
+How ever there are other formats available for use.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+--as-avrodatafile  Imports data to Avro Data Files
+--as-sequencefile  Imports data to SequenceFiles
+--as-textfile      Imports data as plain text (default)
+&lt;/pre&gt;
+&lt;p&gt;Happy sqooping!&lt;/p&gt;&lt;/div&gt;</description><category>BigData</category><guid>http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-2/</guid><pubDate>Fri, 08 Jun 2012 23:22:38 GMT</pubDate></item><item><title>Ingest data from database into Hadoop with Sqoop #1</title><link>http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-1/</link><description>&lt;div&gt;&lt;p&gt;Sqoop is an easy tool to import data from databases to HDFS and export data from Hadoop/Hive tables to Databases. Databases has been de-facto standard for storing structured data. Running complex queries on large data in databases can be detrimental to their performance.
+It is some times useful to import the data into Hadoop for ad hoc analysis. Tools like hive, raw map-reduce can provide tremendous flexibility in performing various kinds of analysis.
+This becomes particularly useful when database has been used mostly as storage device (Ex: Storing XML or unstructured string data as clob data).&lt;/p&gt;
+&lt;p&gt;Sqoop is very simple on it's face. Internally, it uses map-reduce in parallel data import from Database and utilizes JDBC connection for the purpose.&lt;/p&gt;
+&lt;p&gt;I am jumping straight into using sqoop with oracle database and will leave installation for some other post.&lt;/p&gt;
+&lt;p&gt;Sqoop commands are executed from command lines using following structure:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop COMMAND [ARGS]
+&lt;/pre&gt;
+&lt;p&gt;All available sqoop commands can be listed with: sqoop help&lt;/p&gt;
+&lt;p&gt;Article focuses on importing from database specifically Oracle DB. All commands displayed multiline has to be run as a single command.&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;List database schema present on Oracle server&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;User credentials should have have sufficient permission to list the databases:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop list-databases
+             --connect jdbc:oracle:thin:@//HOST:PORT
+             --username DBA_USER
+             --password password
+&lt;/pre&gt;
+&lt;p&gt;Providing password on command line is insecure and we should be using "-P" instead. Sqoop will prompt for the password when you execute the command.&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;List tables present in a Oracle DB&lt;/em&gt;&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop list-tables
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Run arbitrary sql command using Sqoop&lt;/em&gt;&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop eval
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --query "SQL QUERY"
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;List columns for table in Oracle DB&lt;/em&gt;&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop eval
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --query "SELECT  t.*  FROM  TABLENAME  t WHERE 1=0"
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Importing tables from Oracle DB&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;There are many destinations from importing data from Oracle DB. You can import data to :&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;HDFS as raw files&lt;/li&gt;
+&lt;li&gt;Hive table existing or newly created&lt;/li&gt;
+&lt;li&gt;HBase tables&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;I have not explored all of them but I definitely prefer storing them as raw files over hive tables. This makes it easy to define different hive table schema using external tables. You also need to ensure that the target directory in hdfs does not exist prior to running the sqoop command.
+Following will fetch all the data from the table and store it as text file in target directory in HDFS.:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+hadoop fs -rmr /target/directory/in/hdfs
+
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+&lt;/pre&gt;
+&lt;p&gt;The above tries to execute a query to extract column names from the table. If this is not possible then it will error out with&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+ERROR tool.ImportTool: Imported Failed: Attempted to generate class with no columns!
+&lt;/pre&gt;
+&lt;p&gt;In that case, we have to specify the columns manually in the command.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+&lt;/pre&gt;
+&lt;p&gt;The above command works well when primary key is defined for the table. If this is not specified, you will have to perform sequential import by forcing a single mapper:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+&lt;/pre&gt;
+&lt;p&gt;or split by column in the table&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             --split-by COLUMNNAME
+&lt;/pre&gt;
+&lt;p&gt;I will explore few other nuances in importing data into HDFS in subsequent article.&lt;/p&gt;&lt;/div&gt;</description><category>BigData</category><guid>http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-1/</guid><pubDate>Thu, 07 Jun 2012 21:15:29 GMT</pubDate></item></channel></rss>

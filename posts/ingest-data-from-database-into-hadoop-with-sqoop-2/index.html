@@ -1,0 +1,273 @@
+<!DOCTYPE html><html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <meta name="description" content="">
+    <meta name="author" content="Ashish R Vidyarthi">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingest data from database into Hadoop with Sqoop #2 | Programmer's notebook</title>
+    
+    
+        
+            <link href="../../assets/css/all-nocdn.css" rel="stylesheet" type="text/css">
+        
+    
+    <!--[if lt IE 9]>
+      <script src="http://html5shim.googlecode.com/svn/trunk/html5.js" type="text/javascript"></script>
+    <![endif]-->
+    
+        
+            <link rel="alternate" type="application/rss+xml" title="RSS" href="../../rss.xml">
+        
+    
+    
+
+    
+
+    
+
+
+
+    
+</head>
+
+<body>
+    <section class="social">
+        <ul>
+        
+    
+        
+            <li><a href="../../index.html" title="Home"><i class="icon-home"></i></a></li>
+        
+    
+        
+            <li><a href="../../archive.html" title="Archives"><i class="icon-folder-open-alt"></i></a></li>
+        
+    
+        
+            <li><a href="../../categories/index.html" title="Tags"><i class="icon-tags"></i></a></li>
+        
+    
+        
+            <li><a href="../../rss.xml" title="RSS"><i class="icon-rss"></i></a></li>
+        
+    
+        
+            <li><a href="https://www.linkedin.com/in/arvidyarthi/" title="About me"><i class="icon-user"></i></a></li>
+        
+    
+        
+            <li><a href="https://twitter.com/arvidyarthi" title="My Twitter"><i class="icon-twitter"></i></a></li>
+        
+    
+        
+            <li><a href="https://github.com/ashishrv" title="My Github"><i class="icon-github"></i></a></li>
+        
+    
+
+        </ul>
+    </section>
+    <section class="page-content">
+        <div class="content" rel="main">
+            
+    <div class="post">
+    
+    <h1 class="p-name" itemprop="headline name">Ingest data from database into Hadoop with Sqoop #2</h1>
+    
+
+        <div class="meta">
+            <div class="authordate">
+                <time class="timeago" datetime="2012-06-08T23:22:38+00:00">2012-06-08 23:22</time>
+            </div>
+            
+    
+
+            
+    
+          |  
+        <a href="index.rst" id="sourcelink">Source</a>
+    
+
+            
+    
+    <div class="tags">
+        <ul>
+        More posts about:  
+        
+            <li><a class="tag" href="../../categories/bigdata/">BigData</a></li>
+        
+        </ul>
+    </div>
+    
+
+        </div>
+        <div class="body">
+            <div><p>Here, I explore few other variations for importing data from database into HDFS.
+This is a continuation of <a class="reference external" href="../ingest-data-from-database-into-hadoop-with-sqoop-1/">previous article</a>.</p>
+<p>Previous sqoop command listed were good for one time fetch when you want to import all the current data for a table in database.</p>
+<p>A more practical workflow is to fetch data regularly and incrementally into HDFS for analysis. You do not want to skip any previously imported data. For this you have to mark a column for incremental import and also provide an initial value. This column mostly happens to be time-stamp.</p>
+<pre class="literal-block">
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+</pre>
+<p>At the end of the execution, you will have to note down the lastmodified value from the output</p>
+<pre class="literal-block">
+--last-value xxxxxxxxx
+</pre>
+<p>and use it in next execution of the command. You can avoid noting down this value and changing your command for subsequent execution by saving your command as "Sqoop Job".</p>
+<p><em>Save sqoop commands as jobs</em></p>
+<pre class="literal-block">
+sqoop job
+             --create JOBNAME
+             -- import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+</pre>
+<p><em>List and delete sqoop jobs</em></p>
+<p>Now it is pretty easy to list sqoop jobs</p>
+<pre class="literal-block">
+sqoop job --list
+sqoop job --delete JOB_NAME
+</pre>
+<p><em>Execute sqoop jobs</em></p>
+<p>There is one caveat though while executing sqoop jobs.
+It will prompt for password input and if you are thinking of automation,
+you will have to make provisions for that:</p>
+<pre class="literal-block">
+sqoop job --exec JOB_NAME
+</pre>
+<p><em>Other useful configurations</em></p>
+<p>There are few other useful command configuration which comes handy during data import.
+Some of the columns in the table might be a clob data which could contain free running text including the default delimiter and field separator.
+To make sure that I can parse the data in HDFS unambiguously,
+I try to provide field separator and also escape value.:</p>
+<pre class="literal-block">
+sqoop import
+             --fields-terminated-by '\001'
+             --escaped-by \\
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+</pre>
+<p><em>Output data format</em></p>
+<p>So far I have imported data as text files as it is easy to process via several means.
+How ever there are other formats available for use.</p>
+<pre class="literal-block">
+--as-avrodatafile  Imports data to Avro Data Files
+--as-sequencefile  Imports data to SequenceFiles
+--as-textfile      Imports data as plain text (default)
+</pre>
+<p>Happy sqooping!</p></div>
+        </div>
+        
+    
+        <ul class="pager">
+        
+            <li class="previous">
+                <a href="../ingest-data-from-database-into-hadoop-with-sqoop-1/" rel="prev">← Previous post</a>
+            </li>
+        
+        
+            <li class="next">
+                <a href="../logging-for-distributed-application/" rel="next">Next post →</a>
+            </li>
+        
+        </ul>
+    
+
+        
+            
+    
+        
+    
+        <div id="disqus_thread"></div>
+        <script>
+        var disqus_shortname ="ashishrv",
+        
+            disqus_url="http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-2/",
+        
+        disqus_title="Ingest data from database into Hadoop with Sqoop #2",
+        disqus_identifier="cache/posts/ingest-data-from-database-into-hadoop-with-sqoop-2.html",
+        disqus_config = function () {
+            this.language = "";
+        };
+        (function() {
+            var dsq = document.createElement('script'); dsq.async = true;
+            dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+            (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+    </script>
+    <noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript" rel="nofollow">comments powered by Disqus.</a></noscript>
+    <a href="http://disqus.com" class="dsq-brlink" rel="nofollow">Comments powered by <span class="logo-disqus">Disqus</span></a>
+    
+
+    
+
+        
+        
+    
+
+    </div>
+
+            Contents © 2014         <a href="mailto:ashishdotvid@gmaildotcom">Ashish R Vidyarthi</a>        
+            
+    
+<!-- Social buttons -->
+<div id="addthisbox" class="addthis_toolbox addthis_peekaboo_style addthis_default_style addthis_label_style addthis_32x32_style">
+<a class="addthis_button_more">Share</a>
+<ul><li><a class="addthis_button_facebook"></a>
+</li><li><a class="addthis_button_google_plusone_share"></a>
+</li><li><a class="addthis_button_linkedin"></a>
+</li><li><a class="addthis_button_twitter"></a>
+</li></ul>
+</div>
+<script type="text/javascript" src="//s7.addthis.com/js/300/addthis_widget.js#pubid=ra-4f7088a56bb93798"></script>
+<!-- End of social buttons -->
+
+
+        </div>
+    </section>
+    
+    
+        
+            <script src="../../assets/js/all-nocdn.js" type="text/javascript"></script>
+        
+    
+
+    
+        <script type="text/javascript">
+            $(function(){
+                $('.timeago').timeago();
+            });
+        </script>
+    
+    
+</body>
+</html>

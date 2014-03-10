@@ -1,0 +1,293 @@
+<!DOCTYPE html><html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <meta name="description" content="">
+    <meta name="author" content="Ashish R Vidyarthi">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingest data from database into Hadoop with Sqoop #1 | Programmer's notebook</title>
+    
+    
+        
+            <link href="../../assets/css/all-nocdn.css" rel="stylesheet" type="text/css">
+        
+    
+    <!--[if lt IE 9]>
+      <script src="http://html5shim.googlecode.com/svn/trunk/html5.js" type="text/javascript"></script>
+    <![endif]-->
+    
+        
+            <link rel="alternate" type="application/rss+xml" title="RSS" href="../../rss.xml">
+        
+    
+    
+
+    
+
+    
+
+
+
+    
+</head>
+
+<body>
+    <section class="social">
+        <ul>
+        
+    
+        
+            <li><a href="../../index.html" title="Home"><i class="icon-home"></i></a></li>
+        
+    
+        
+            <li><a href="../../archive.html" title="Archives"><i class="icon-folder-open-alt"></i></a></li>
+        
+    
+        
+            <li><a href="../../categories/index.html" title="Tags"><i class="icon-tags"></i></a></li>
+        
+    
+        
+            <li><a href="../../rss.xml" title="RSS"><i class="icon-rss"></i></a></li>
+        
+    
+        
+            <li><a href="https://www.linkedin.com/in/arvidyarthi/" title="About me"><i class="icon-user"></i></a></li>
+        
+    
+        
+            <li><a href="https://twitter.com/arvidyarthi" title="My Twitter"><i class="icon-twitter"></i></a></li>
+        
+    
+        
+            <li><a href="https://github.com/ashishrv" title="My Github"><i class="icon-github"></i></a></li>
+        
+    
+
+        </ul>
+    </section>
+    <section class="page-content">
+        <div class="content" rel="main">
+            
+    <div class="post">
+    
+    <h1 class="p-name" itemprop="headline name">Ingest data from database into Hadoop with Sqoop #1</h1>
+    
+
+        <div class="meta">
+            <div class="authordate">
+                <time class="timeago" datetime="2012-06-07T21:15:29+00:00">2012-06-07 21:15</time>
+            </div>
+            
+    
+
+            
+    
+          |  
+        <a href="index.rst" id="sourcelink">Source</a>
+    
+
+            
+    
+    <div class="tags">
+        <ul>
+        More posts about:  
+        
+            <li><a class="tag" href="../../categories/bigdata/">BigData</a></li>
+        
+        </ul>
+    </div>
+    
+
+        </div>
+        <div class="body">
+            <div><p>Sqoop is an easy tool to import data from databases to HDFS and export data from Hadoop/Hive tables to Databases. Databases has been de-facto standard for storing structured data. Running complex queries on large data in databases can be detrimental to their performance.
+It is some times useful to import the data into Hadoop for ad hoc analysis. Tools like hive, raw map-reduce can provide tremendous flexibility in performing various kinds of analysis.
+This becomes particularly useful when database has been used mostly as storage device (Ex: Storing XML or unstructured string data as clob data).</p>
+<p>Sqoop is very simple on it's face. Internally, it uses map-reduce in parallel data import from Database and utilizes JDBC connection for the purpose.</p>
+<p>I am jumping straight into using sqoop with oracle database and will leave installation for some other post.</p>
+<p>Sqoop commands are executed from command lines using following structure:</p>
+<pre class="literal-block">
+sqoop COMMAND [ARGS]
+</pre>
+<p>All available sqoop commands can be listed with: sqoop help</p>
+<p>Article focuses on importing from database specifically Oracle DB. All commands displayed multiline has to be run as a single command.</p>
+<p><em>List database schema present on Oracle server</em></p>
+<p>User credentials should have have sufficient permission to list the databases:</p>
+<pre class="literal-block">
+sqoop list-databases
+             --connect jdbc:oracle:thin:@//HOST:PORT
+             --username DBA_USER
+             --password password
+</pre>
+<p>Providing password on command line is insecure and we should be using "-P" instead. Sqoop will prompt for the password when you execute the command.</p>
+<p><em>List tables present in a Oracle DB</em></p>
+<pre class="literal-block">
+sqoop list-tables
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+</pre>
+<p><em>Run arbitrary sql command using Sqoop</em></p>
+<pre class="literal-block">
+sqoop eval
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --query "SQL QUERY"
+</pre>
+<p><em>List columns for table in Oracle DB</em></p>
+<pre class="literal-block">
+sqoop eval
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --query "SELECT  t.*  FROM  TABLENAME  t WHERE 1=0"
+</pre>
+<p><em>Importing tables from Oracle DB</em></p>
+<p>There are many destinations from importing data from Oracle DB. You can import data to :</p>
+<ul class="simple">
+<li>HDFS as raw files</li>
+<li>Hive table existing or newly created</li>
+<li>HBase tables</li>
+</ul>
+<p>I have not explored all of them but I definitely prefer storing them as raw files over hive tables. This makes it easy to define different hive table schema using external tables. You also need to ensure that the target directory in hdfs does not exist prior to running the sqoop command.
+Following will fetch all the data from the table and store it as text file in target directory in HDFS.:</p>
+<pre class="literal-block">
+hadoop fs -rmr /target/directory/in/hdfs
+
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+</pre>
+<p>The above tries to execute a query to extract column names from the table. If this is not possible then it will error out with</p>
+<pre class="literal-block">
+ERROR tool.ImportTool: Imported Failed: Attempted to generate class with no columns!
+</pre>
+<p>In that case, we have to specify the columns manually in the command.</p>
+<pre class="literal-block">
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+</pre>
+<p>The above command works well when primary key is defined for the table. If this is not specified, you will have to perform sequential import by forcing a single mapper:</p>
+<pre class="literal-block">
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+</pre>
+<p>or split by column in the table</p>
+<pre class="literal-block">
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             --split-by COLUMNNAME
+</pre>
+<p>I will explore few other nuances in importing data into HDFS in subsequent article.</p></div>
+        </div>
+        
+    
+        <ul class="pager">
+        
+            <li class="previous">
+                <a href="../learning-twisted-1-reactor-basics/" rel="prev">← Previous post</a>
+            </li>
+        
+        
+            <li class="next">
+                <a href="../ingest-data-from-database-into-hadoop-with-sqoop-2/" rel="next">Next post →</a>
+            </li>
+        
+        </ul>
+    
+
+        
+            
+    
+        
+    
+        <div id="disqus_thread"></div>
+        <script>
+        var disqus_shortname ="ashishrv",
+        
+            disqus_url="http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-1/",
+        
+        disqus_title="Ingest data from database into Hadoop with Sqoop #1",
+        disqus_identifier="cache/posts/ingest-data-from-database-into-hadoop-with-sqoop-1.html",
+        disqus_config = function () {
+            this.language = "";
+        };
+        (function() {
+            var dsq = document.createElement('script'); dsq.async = true;
+            dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+            (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+    </script>
+    <noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript" rel="nofollow">comments powered by Disqus.</a></noscript>
+    <a href="http://disqus.com" class="dsq-brlink" rel="nofollow">Comments powered by <span class="logo-disqus">Disqus</span></a>
+    
+
+    
+
+        
+        
+    
+
+    </div>
+
+            Contents © 2014         <a href="mailto:ashishdotvid@gmaildotcom">Ashish R Vidyarthi</a>        
+            
+    
+<!-- Social buttons -->
+<div id="addthisbox" class="addthis_toolbox addthis_peekaboo_style addthis_default_style addthis_label_style addthis_32x32_style">
+<a class="addthis_button_more">Share</a>
+<ul><li><a class="addthis_button_facebook"></a>
+</li><li><a class="addthis_button_google_plusone_share"></a>
+</li><li><a class="addthis_button_linkedin"></a>
+</li><li><a class="addthis_button_twitter"></a>
+</li></ul>
+</div>
+<script type="text/javascript" src="//s7.addthis.com/js/300/addthis_widget.js#pubid=ra-4f7088a56bb93798"></script>
+<!-- End of social buttons -->
+
+
+        </div>
+    </section>
+    
+    
+        
+            <script src="../../assets/js/all-nocdn.js" type="text/javascript"></script>
+        
+    
+
+    
+        <script type="text/javascript">
+            $(function(){
+                $('.timeago').timeago();
+            });
+        </script>
+    
+    
+</body>
+</html>
