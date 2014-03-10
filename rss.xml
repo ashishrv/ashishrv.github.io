@@ -1,5 +1,283 @@
 <?xml version="1.0" encoding="utf-8"?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Programmer's notebook</title><link>http://ashishrv.github.io/</link><description>A future Reference ...</description><atom:link href="http://ashishrv.github.io/rss.xml" type="application/rss+xml" rel="self"></atom:link><language>en</language><lastBuildDate>Sun, 09 Mar 2014 00:37:28 GMT</lastBuildDate><generator>Nikola &lt;http://getnikola.com/&gt;</generator><docs>http://blogs.law.harvard.edu/tech/rss</docs><item><title>Learning Twisted #1 reactor basics</title><link>http://ashishrv.github.io/posts/learning-twisted-1-reactor-basics/</link><description>&lt;div&gt;&lt;p&gt;&lt;a class="reference external" href="http://twistedmatrix.com/trac/wiki/Documentation"&gt;Twisted framework&lt;/a&gt; is an event based networking framework in Python.
+<rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Programmer's notebook</title><link>http://ashishrv.github.io/</link><description>A future Reference ...</description><atom:link href="http://ashishrv.github.io/rss.xml" type="application/rss+xml" rel="self"></atom:link><language>en</language><lastBuildDate>Sun, 09 Mar 2014 23:17:15 GMT</lastBuildDate><generator>Nikola &lt;http://getnikola.com/&gt;</generator><docs>http://blogs.law.harvard.edu/tech/rss</docs><item><title>Centralized logging for distributed applications with pyzmq</title><link>http://ashishrv.github.io/posts/logging-for-distributed-application/</link><description>&lt;div&gt;&lt;p&gt;Simpler distributed applications can take advantage of centralized logging.
+PyZMQ, a Python bindings for ØMQ provides log handlers for the python logging module and can be easily used for this purpose.
+Log handlers utilizes ØMQ Pub/Sub pattern and broadcasts log messages through a PUB socket.
+It is quite easy to construct the message collector and write messages to a central location.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
++-------------+
+|Machine1:App1+-------------------------
++-------------+                        |
+                                +---------------+
++-------------+.................|Machine3:Logger|
+|Machine1:App2|                 +---------------+
++-------------+                       |
+                                      |
+       +-------------+                |
+       |Machine2:App1|-----------------
+       +-------------+
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Client Application&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;To start with, we will need pyzmq library and support for logging library.&lt;/p&gt;
+&lt;p&gt;client logger: usual imports&lt;/p&gt;
+&lt;pre class="code python literal-block"&gt;
+&lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="nn"&gt;logging&lt;/span&gt;
+&lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="nn"&gt;random&lt;/span&gt;
+&lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="nn"&gt;time&lt;/span&gt;
+&lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="nn"&gt;zmq&lt;/span&gt;
+&lt;span class="kn"&gt;from&lt;/span&gt; &lt;span class="nn"&gt;zmq.log.handlers&lt;/span&gt; &lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="n"&gt;PUBHandler&lt;/span&gt;
+&lt;/pre&gt;
+&lt;p&gt;Useful format that identifies where the logs are emanating from.&lt;/p&gt;
+&lt;pre class="code python literal-block"&gt;
+&lt;span class="n"&gt;LOG_LEVELS&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;DEBUG&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;INFO&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;WARN&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;ERROR&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;CRITICAL&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+&lt;span class="n"&gt;formatters&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;DEBUG&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Formatter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="si"&gt;%(filename)s&lt;/span&gt;&lt;span class="s"&gt;:&lt;/span&gt;&lt;span class="si"&gt;%(lineno)d&lt;/span&gt;&lt;span class="s"&gt; | &lt;/span&gt;&lt;span class="si"&gt;%(message)s&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;INFO&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Formatter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="si"&gt;%(filename)s&lt;/span&gt;&lt;span class="s"&gt;:&lt;/span&gt;&lt;span class="si"&gt;%(lineno)d&lt;/span&gt;&lt;span class="s"&gt; | &lt;/span&gt;&lt;span class="si"&gt;%(message)s&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;WARN&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Formatter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="si"&gt;%(filename)s&lt;/span&gt;&lt;span class="s"&gt;:&lt;/span&gt;&lt;span class="si"&gt;%(lineno)d&lt;/span&gt;&lt;span class="s"&gt; | &lt;/span&gt;&lt;span class="si"&gt;%(message)s&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;ERROR&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Formatter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="si"&gt;%(filename)s&lt;/span&gt;&lt;span class="s"&gt;:&lt;/span&gt;&lt;span class="si"&gt;%(lineno)d&lt;/span&gt;&lt;span class="s"&gt; | &lt;/span&gt;&lt;span class="si"&gt;%(message)s&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;CRITICAL&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Formatter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="si"&gt;%(filename)s&lt;/span&gt;&lt;span class="s"&gt;:&lt;/span&gt;&lt;span class="si"&gt;%(lineno)d&lt;/span&gt;&lt;span class="s"&gt; | &lt;/span&gt;&lt;span class="si"&gt;%(message)s&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+        &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="n"&gt;interval&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;
+&lt;span class="n"&gt;port&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;5558&lt;/span&gt;
+&lt;/pre&gt;
+&lt;p&gt;And finally the log handler that allows publication of messages over a PUB zmq socket.&lt;/p&gt;
+&lt;pre class="code python literal-block"&gt;
+&lt;span class="n"&gt;ctx&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;zmq&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Context&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt;
+&lt;span class="n"&gt;pub&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;ctx&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;socket&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;zmq&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;PUB&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;pub&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;connect&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;'tcp://127.0.0.1:&lt;/span&gt;&lt;span class="si"&gt;%i&lt;/span&gt;&lt;span class="s"&gt;'&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="n"&gt;port&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;logger&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;getLogger&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"clientapp1"&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;logger&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;setLevel&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;level&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;handler&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;PUBHandler&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;pub&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;handler&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;formatters&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;formatters&lt;/span&gt;
+&lt;span class="n"&gt;logger&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;addHandler&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;handler&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="k"&gt;while&lt;/span&gt; &lt;span class="bp"&gt;True&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+        &lt;span class="n"&gt;level&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;random&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;choice&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;LOG_LEVELS&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+        &lt;span class="n"&gt;logger&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;log&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;level&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s"&gt;"subtopic.subsub::Hello from &lt;/span&gt;&lt;span class="si"&gt;%i&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="n"&gt;os&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;getpid&lt;/span&gt;&lt;span class="p"&gt;())&lt;/span&gt;
+        &lt;span class="n"&gt;time&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;sleep&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;interval&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;
+&lt;p&gt;You may have also notice the use of specific style of message that helps you provide a specific subtopic which is useful for logging structure.
+Finally, we will implement the centralized logger.&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;Centralized logger&lt;/em&gt; with usual imports and parameters.&lt;/p&gt;
+&lt;pre class="code python literal-block"&gt;
+&lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="nn"&gt;zmq.green&lt;/span&gt; &lt;span class="kn"&gt;as&lt;/span&gt; &lt;span class="nn"&gt;zmq&lt;/span&gt;
+&lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="nn"&gt;logging&lt;/span&gt;
+&lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="nn"&gt;logging.handlers&lt;/span&gt;
+
+&lt;span class="n"&gt;LOG_LEVELS&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="s"&gt;'DEBUG'&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;DEBUG&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+              &lt;span class="s"&gt;'INFO'&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;INFO&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+              &lt;span class="s"&gt;'WARN'&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;WARN&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+              &lt;span class="s"&gt;'ERROR'&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;ERROR&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+              &lt;span class="s"&gt;'CRITICAL'&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;CRITICAL&lt;/span&gt;
+              &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="n"&gt;port&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;5558&lt;/span&gt;
+&lt;/pre&gt;
+&lt;p&gt;The centralized logger implements the SUB pattern (of PUB/SUB) to subscribe to published messages and log the messages to a file. The published messages could emanate from different applications on different machines and provides for centralized logging.&lt;/p&gt;
+&lt;pre class="code python literal-block"&gt;
+&lt;span class="n"&gt;logger&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;getLogger&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt;
+&lt;span class="n"&gt;context&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;zmq&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Context&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;context&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;socket_fd&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;context&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;socket&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;zmq&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;SUB&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;socket_fd&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;bind&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"tcp://localhost:&lt;/span&gt;&lt;span class="si"&gt;%s&lt;/span&gt;&lt;span class="s"&gt;"&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="n"&gt;port&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;socket_fd&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;setsockopt&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;zmq&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;SUBSCRIBE&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s"&gt;""&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;filehandler&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;handlers&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;TimedRotatingFileHandler&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;'log file'&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s"&gt;'midnight'&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;logger&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;setLevel&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;DEBUG&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;filehandler&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;setLevel&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;DEBUG&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;formatter&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Formatter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;'&lt;/span&gt;&lt;span class="si"&gt;%(asctime)s&lt;/span&gt;&lt;span class="s"&gt; | &lt;/span&gt;&lt;span class="si"&gt;%(levelname)s&lt;/span&gt;&lt;span class="s"&gt; | &lt;/span&gt;&lt;span class="si"&gt;%(message)s&lt;/span&gt;&lt;span class="s"&gt;'&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;filehandler&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;setFormatter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;formatter&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;logger&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;addHandler&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;filehandler&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="k"&gt;while&lt;/span&gt; &lt;span class="bp"&gt;True&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+        &lt;span class="n"&gt;topic&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;message&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;socket_fd&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;recv_multipart&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt;
+        &lt;span class="n"&gt;pos&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;topic&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;find&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;'.'&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+        &lt;span class="n"&gt;level&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;topic&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;pos&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;level&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;topic&lt;/span&gt;&lt;span class="p"&gt;[:&lt;/span&gt;&lt;span class="n"&gt;pos&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;message&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;endswith&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;'&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;'&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt; &lt;span class="n"&gt;message&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;message&lt;/span&gt;&lt;span class="p"&gt;[:&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
+        &lt;span class="n"&gt;log_msg&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;getattr&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;logging&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;level&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;lower&lt;/span&gt;&lt;span class="p"&gt;())&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;pos&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;message&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;topic&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;pos&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;:]&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="s"&gt;" | "&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="n"&gt;message&lt;/span&gt;
+        &lt;span class="n"&gt;log_msg&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;message&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;</description><category>python</category><guid>http://ashishrv.github.io/posts/logging-for-distributed-application/</guid><pubDate>Wed, 14 Aug 2013 01:13:00 GMT</pubDate></item><item><title>Ingest data from database into Hadoop with Sqoop #2</title><link>http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-2/</link><description>&lt;div&gt;&lt;p&gt;Here, I explore few other variations for importing data from database into HDFS.
+This is a continuation of &lt;a class="reference external" href="http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-1/"&gt;previous article&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;Previous sqoop command listed were good for one time fetch when you want to import all the current data for a table in database.&lt;/p&gt;
+&lt;p&gt;A more practical workflow is to fetch data regularly and incrementally into HDFS for analysis. You do not want to skip any previously imported data. For this you have to mark a column for incremental import and also provide an initial value. This column mostly happens to be time-stamp.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+&lt;/pre&gt;
+&lt;p&gt;At the end of the execution, you will have to note down the lastmodified value from the output&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+--last-value xxxxxxxxx
+&lt;/pre&gt;
+&lt;p&gt;and use it in next execution of the command. You can avoid noting down this value and changing your command for subsequent execution by saving your command as "Sqoop Job".&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;Save sqoop commands as jobs&lt;/em&gt;&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop job
+             --create JOBNAME
+             -- import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;List and delete sqoop jobs&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;Now it is pretty easy to list sqoop jobs&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop job --list
+sqoop job --delete JOB_NAME
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Execute sqoop jobs&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;There is one caveat though while executing sqoop jobs.
+It will prompt for password input and if you are thinking of automation,
+you will have to make provisions for that:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop job --exec JOB_NAME
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Other useful configurations&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;There are few other useful command configuration which comes handy during data import.
+Some of the columns in the table might be a clob data which could contain free running text including the default delimiter and field separator.
+To make sure that I can parse the data in HDFS unambiguously,
+I try to provide field separator and also escape value.:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --fields-terminated-by '\001'
+             --escaped-by \\
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Output data format&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;So far I have imported data as text files as it is easy to process via several means.
+How ever there are other formats available for use.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+--as-avrodatafile  Imports data to Avro Data Files
+--as-sequencefile  Imports data to SequenceFiles
+--as-textfile      Imports data as plain text (default)
+&lt;/pre&gt;
+&lt;p&gt;Happy sqooping!&lt;/p&gt;&lt;/div&gt;</description><category>BigData</category><guid>http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-2/</guid><pubDate>Fri, 08 Jun 2012 23:22:38 GMT</pubDate></item><item><title>Ingest data from database into Hadoop with Sqoop #1</title><link>http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-1/</link><description>&lt;div&gt;&lt;p&gt;Sqoop is an easy tool to import data from databases to HDFS and export data from Hadoop/Hive tables to Databases. Databases has been de-facto standard for storing structured data. Running complex queries on large data in databases can be detrimental to their performance.
+It is some times useful to import the data into Hadoop for ad hoc analysis. Tools like hive, raw map-reduce can provide tremendous flexibility in performing various kinds of analysis.
+This becomes particularly useful when database has been used mostly as storage device (Ex: Storing XML or unstructured string data as clob data).&lt;/p&gt;
+&lt;p&gt;Sqoop is very simple on it's face. Internally, it uses map-reduce in parallel data import from Database and utilizes JDBC connection for the purpose.&lt;/p&gt;
+&lt;p&gt;I am jumping straight into using sqoop with oracle database and will leave installation for some other post.&lt;/p&gt;
+&lt;p&gt;Sqoop commands are executed from command lines using following structure:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop COMMAND [ARGS]
+&lt;/pre&gt;
+&lt;p&gt;All available sqoop commands can be listed with: sqoop help&lt;/p&gt;
+&lt;p&gt;Article focuses on importing from database specifically Oracle DB. All commands displayed multiline has to be run as a single command.&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;List database schema present on Oracle server&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;User credentials should have have sufficient permission to list the databases:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop list-databases
+             --connect jdbc:oracle:thin:@//HOST:PORT
+             --username DBA_USER
+             --password password
+&lt;/pre&gt;
+&lt;p&gt;Providing password on command line is insecure and we should be using "-P" instead. Sqoop will prompt for the password when you execute the command.&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;List tables present in a Oracle DB&lt;/em&gt;&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop list-tables
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Run arbitrary sql command using Sqoop&lt;/em&gt;&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop eval
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --query "SQL QUERY"
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;List columns for table in Oracle DB&lt;/em&gt;&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop eval
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --query "SELECT  t.*  FROM  TABLENAME  t WHERE 1=0"
+&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;Importing tables from Oracle DB&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;There are many destinations from importing data from Oracle DB. You can import data to :&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;HDFS as raw files&lt;/li&gt;
+&lt;li&gt;Hive table existing or newly created&lt;/li&gt;
+&lt;li&gt;HBase tables&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;I have not explored all of them but I definitely prefer storing them as raw files over hive tables. This makes it easy to define different hive table schema using external tables. You also need to ensure that the target directory in hdfs does not exist prior to running the sqoop command.
+Following will fetch all the data from the table and store it as text file in target directory in HDFS.:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+hadoop fs -rmr /target/directory/in/hdfs
+
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+&lt;/pre&gt;
+&lt;p&gt;The above tries to execute a query to extract column names from the table. If this is not possible then it will error out with&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+ERROR tool.ImportTool: Imported Failed: Attempted to generate class with no columns!
+&lt;/pre&gt;
+&lt;p&gt;In that case, we have to specify the columns manually in the command.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+&lt;/pre&gt;
+&lt;p&gt;The above command works well when primary key is defined for the table. If this is not specified, you will have to perform sequential import by forcing a single mapper:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+&lt;/pre&gt;
+&lt;p&gt;or split by column in the table&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             --split-by COLUMNNAME
+&lt;/pre&gt;
+&lt;p&gt;I will explore few other nuances in importing data into HDFS in subsequent article.&lt;/p&gt;&lt;/div&gt;</description><category>BigData</category><guid>http://ashishrv.github.io/posts/ingest-data-from-database-into-hadoop-with-sqoop-1/</guid><pubDate>Thu, 07 Jun 2012 21:15:29 GMT</pubDate></item><item><title>Learning Twisted #1 reactor basics</title><link>http://ashishrv.github.io/posts/learning-twisted-1-reactor-basics/</link><description>&lt;div&gt;&lt;p&gt;&lt;a class="reference external" href="http://twistedmatrix.com/trac/wiki/Documentation"&gt;Twisted framework&lt;/a&gt; is an event based networking framework in Python.
 This description suffices for initial impression about this framework.&lt;/p&gt;
 &lt;p&gt;These and subsequent posts will serve as my notes for learning Twisted.&lt;/p&gt;
 &lt;p&gt;At the core of &lt;a class="reference external" href="http://en.wikipedia.org/wiki/Event-driven_programming"&gt;event based programming&lt;/a&gt; is reactor loop that run endlessly unless asked to stop.&lt;/p&gt;

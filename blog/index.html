@@ -68,6 +68,398 @@
             
     
         <div class="post">
+            <h1 class="title"><a href="../posts/logging-for-distributed-application/">Centralized logging for distributed applications with pyzmq</a></h1>
+            <div class="meta">
+                <div class="authordate">
+                    <time class="timeago" datetime="2013-08-14T01:13:00+00:00">2013-08-14 01:13</time>
+                </div>
+                <div class="stats">
+                
+                    
+    
+        
+    <p>
+    
+        <a href="../posts/logging-for-distributed-application/#disqus_thread" data-disqus-identifier="cache/posts/logging-for-distributed-application.html">Comments</a>
+    
+
+    
+
+                
+                </p></div>
+                
+    
+    <div class="tags">
+        <ul>
+        More posts about:  
+        
+            <li><a class="tag" href="../categories/python/">python</a></li>
+        
+        </ul>
+    </div>
+    
+
+            </div>
+            <div class="body">
+                <div><p>Simpler distributed applications can take advantage of centralized logging.
+PyZMQ, a Python bindings for ØMQ provides log handlers for the python logging module and can be easily used for this purpose.
+Log handlers utilizes ØMQ Pub/Sub pattern and broadcasts log messages through a PUB socket.
+It is quite easy to construct the message collector and write messages to a central location.</p>
+<pre class="literal-block">
++-------------+
+|Machine1:App1+-------------------------
++-------------+                        |
+                                +---------------+
++-------------+.................|Machine3:Logger|
+|Machine1:App2|                 +---------------+
++-------------+                       |
+                                      |
+       +-------------+                |
+       |Machine2:App1|-----------------
+       +-------------+
+</pre>
+<p><em>Client Application</em></p>
+<p>To start with, we will need pyzmq library and support for logging library.</p>
+<p>client logger: usual imports</p>
+<pre class="code python literal-block">
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">zmq</span>
+<span class="kn">from</span> <span class="nn">zmq.log.handlers</span> <span class="kn">import</span> <span class="n">PUBHandler</span>
+</pre>
+<p>Useful format that identifies where the logs are emanating from.</p>
+<pre class="code python literal-block">
+<span class="n">LOG_LEVELS</span> <span class="o">=</span> <span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">,</span> <span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">logging</span><span class="o">.</span><span class="n">WARN</span><span class="p">,</span> <span class="n">logging</span><span class="o">.</span><span class="n">ERROR</span><span class="p">,</span> <span class="n">logging</span><span class="o">.</span><span class="n">CRITICAL</span><span class="p">)</span>
+
+<span class="n">formatters</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s">"</span><span class="si">%(filename)s</span><span class="s">:</span><span class="si">%(lineno)d</span><span class="s"> | </span><span class="si">%(message)s</span><span class="se">\n</span><span class="s">"</span><span class="p">),</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s">"</span><span class="si">%(filename)s</span><span class="s">:</span><span class="si">%(lineno)d</span><span class="s"> | </span><span class="si">%(message)s</span><span class="se">\n</span><span class="s">"</span><span class="p">),</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">WARN</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s">"</span><span class="si">%(filename)s</span><span class="s">:</span><span class="si">%(lineno)d</span><span class="s"> | </span><span class="si">%(message)s</span><span class="se">\n</span><span class="s">"</span><span class="p">),</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">ERROR</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s">"</span><span class="si">%(filename)s</span><span class="s">:</span><span class="si">%(lineno)d</span><span class="s"> | </span><span class="si">%(message)s</span><span class="se">\n</span><span class="s">"</span><span class="p">),</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">CRITICAL</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s">"</span><span class="si">%(filename)s</span><span class="s">:</span><span class="si">%(lineno)d</span><span class="s"> | </span><span class="si">%(message)s</span><span class="se">\n</span><span class="s">"</span><span class="p">)</span>
+        <span class="p">}</span>
+<span class="n">interval</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="n">port</span> <span class="o">=</span> <span class="mi">5558</span>
+</pre>
+<p>And finally the log handler that allows publication of messages over a PUB zmq socket.</p>
+<pre class="code python literal-block">
+<span class="n">ctx</span> <span class="o">=</span> <span class="n">zmq</span><span class="o">.</span><span class="n">Context</span><span class="p">()</span>
+<span class="n">pub</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">zmq</span><span class="o">.</span><span class="n">PUB</span><span class="p">)</span>
+<span class="n">pub</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s">'tcp://127.0.0.1:</span><span class="si">%i</span><span class="s">'</span> <span class="o">%</span> <span class="n">port</span><span class="p">)</span>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s">"clientapp1"</span><span class="p">)</span>
+<span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
+<span class="n">handler</span> <span class="o">=</span> <span class="n">PUBHandler</span><span class="p">(</span><span class="n">pub</span><span class="p">)</span>
+<span class="n">handler</span><span class="o">.</span><span class="n">formatters</span> <span class="o">=</span> <span class="n">formatters</span>
+<span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">handler</span><span class="p">)</span>
+<span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+        <span class="n">level</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">LOG_LEVELS</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="s">"subtopic.subsub::Hello from </span><span class="si">%i</span><span class="s">"</span> <span class="o">%</span> <span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">())</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">interval</span><span class="p">)</span>
+</pre>
+<p>You may have also notice the use of specific style of message that helps you provide a specific subtopic which is useful for logging structure.
+Finally, we will implement the centralized logger.</p>
+<p><em>Centralized logger</em> with usual imports and parameters.</p>
+<pre class="code python literal-block">
+<span class="kn">import</span> <span class="nn">zmq.green</span> <span class="kn">as</span> <span class="nn">zmq</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">logging.handlers</span>
+
+<span class="n">LOG_LEVELS</span> <span class="o">=</span> <span class="p">{</span><span class="s">'DEBUG'</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">,</span>
+              <span class="s">'INFO'</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span>
+              <span class="s">'WARN'</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">WARN</span><span class="p">,</span>
+              <span class="s">'ERROR'</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">ERROR</span><span class="p">,</span>
+              <span class="s">'CRITICAL'</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">CRITICAL</span>
+              <span class="p">}</span>
+<span class="n">port</span> <span class="o">=</span> <span class="mi">5558</span>
+</pre>
+<p>The centralized logger implements the SUB pattern (of PUB/SUB) to subscribe to published messages and log the messages to a file. The published messages could emanate from different applications on different machines and provides for centralized logging.</p>
+<pre class="code python literal-block">
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">()</span>
+<span class="n">context</span> <span class="o">=</span> <span class="n">zmq</span><span class="o">.</span><span class="n">Context</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+<span class="n">socket_fd</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">zmq</span><span class="o">.</span><span class="n">SUB</span><span class="p">)</span>
+<span class="n">socket_fd</span><span class="o">.</span><span class="n">bind</span><span class="p">(</span><span class="s">"tcp://localhost:</span><span class="si">%s</span><span class="s">"</span> <span class="o">%</span> <span class="n">port</span><span class="p">)</span>
+<span class="n">socket_fd</span><span class="o">.</span><span class="n">setsockopt</span><span class="p">(</span><span class="n">zmq</span><span class="o">.</span><span class="n">SUBSCRIBE</span><span class="p">,</span> <span class="s">""</span><span class="p">)</span>
+<span class="n">filehandler</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">handlers</span><span class="o">.</span><span class="n">TimedRotatingFileHandler</span><span class="p">(</span><span class="s">'log file'</span><span class="p">,</span> <span class="s">'midnight'</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+<span class="n">filehandler</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+<span class="n">formatter</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s">'</span><span class="si">%(asctime)s</span><span class="s"> | </span><span class="si">%(levelname)s</span><span class="s"> | </span><span class="si">%(message)s</span><span class="s">'</span><span class="p">)</span>
+<span class="n">filehandler</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span>
+<span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">filehandler</span><span class="p">)</span>
+<span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+        <span class="n">topic</span><span class="p">,</span> <span class="n">message</span> <span class="o">=</span> <span class="n">socket_fd</span><span class="o">.</span><span class="n">recv_multipart</span><span class="p">()</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">topic</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">'.'</span><span class="p">)</span>
+        <span class="n">level</span> <span class="o">=</span> <span class="n">topic</span>
+        <span class="k">if</span> <span class="n">pos</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span> <span class="n">level</span> <span class="o">=</span> <span class="n">topic</span><span class="p">[:</span><span class="n">pos</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">'</span><span class="se">\n</span><span class="s">'</span><span class="p">):</span> <span class="n">message</span> <span class="o">=</span> <span class="n">message</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">log_msg</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">logging</span><span class="p">,</span> <span class="n">level</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">pos</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span> <span class="n">message</span> <span class="o">=</span> <span class="n">topic</span><span class="p">[</span><span class="n">pos</span><span class="o">+</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="s">" | "</span> <span class="o">+</span> <span class="n">message</span>
+        <span class="n">log_msg</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+</pre></div>
+            </div>
+        </div>
+    
+        <div class="post">
+            <h1 class="title"><a href="../posts/ingest-data-from-database-into-hadoop-with-sqoop-2/">Ingest data from database into Hadoop with Sqoop #2</a></h1>
+            <div class="meta">
+                <div class="authordate">
+                    <time class="timeago" datetime="2012-06-08T23:22:38+00:00">2012-06-08 23:22</time>
+                </div>
+                <div class="stats">
+                
+                    
+    
+        
+    <p>
+    
+        <a href="../posts/ingest-data-from-database-into-hadoop-with-sqoop-2/#disqus_thread" data-disqus-identifier="cache/posts/ingest-data-from-database-into-hadoop-with-sqoop-2.html">Comments</a>
+    
+
+    
+
+                
+                </p></div>
+                
+    
+    <div class="tags">
+        <ul>
+        More posts about:  
+        
+            <li><a class="tag" href="../categories/bigdata/">BigData</a></li>
+        
+        </ul>
+    </div>
+    
+
+            </div>
+            <div class="body">
+                <div><p>Here, I explore few other variations for importing data from database into HDFS.
+This is a continuation of <a class="reference external" href="../posts/ingest-data-from-database-into-hadoop-with-sqoop-1/">previous article</a>.</p>
+<p>Previous sqoop command listed were good for one time fetch when you want to import all the current data for a table in database.</p>
+<p>A more practical workflow is to fetch data regularly and incrementally into HDFS for analysis. You do not want to skip any previously imported data. For this you have to mark a column for incremental import and also provide an initial value. This column mostly happens to be time-stamp.</p>
+<pre class="literal-block">
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+</pre>
+<p>At the end of the execution, you will have to note down the lastmodified value from the output</p>
+<pre class="literal-block">
+--last-value xxxxxxxxx
+</pre>
+<p>and use it in next execution of the command. You can avoid noting down this value and changing your command for subsequent execution by saving your command as "Sqoop Job".</p>
+<p><em>Save sqoop commands as jobs</em></p>
+<pre class="literal-block">
+sqoop job
+             --create JOBNAME
+             -- import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+</pre>
+<p><em>List and delete sqoop jobs</em></p>
+<p>Now it is pretty easy to list sqoop jobs</p>
+<pre class="literal-block">
+sqoop job --list
+sqoop job --delete JOB_NAME
+</pre>
+<p><em>Execute sqoop jobs</em></p>
+<p>There is one caveat though while executing sqoop jobs.
+It will prompt for password input and if you are thinking of automation,
+you will have to make provisions for that:</p>
+<pre class="literal-block">
+sqoop job --exec JOB_NAME
+</pre>
+<p><em>Other useful configurations</em></p>
+<p>There are few other useful command configuration which comes handy during data import.
+Some of the columns in the table might be a clob data which could contain free running text including the default delimiter and field separator.
+To make sure that I can parse the data in HDFS unambiguously,
+I try to provide field separator and also escape value.:</p>
+<pre class="literal-block">
+sqoop import
+             --fields-terminated-by '\001'
+             --escaped-by \\
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+             --check-column COLUMN3
+             --incremental  lastmodified
+             --last-value "LAST VALUE"
+</pre>
+<p><em>Output data format</em></p>
+<p>So far I have imported data as text files as it is easy to process via several means.
+How ever there are other formats available for use.</p>
+<pre class="literal-block">
+--as-avrodatafile  Imports data to Avro Data Files
+--as-sequencefile  Imports data to SequenceFiles
+--as-textfile      Imports data as plain text (default)
+</pre>
+<p>Happy sqooping!</p></div>
+            </div>
+        </div>
+    
+        <div class="post">
+            <h1 class="title"><a href="../posts/ingest-data-from-database-into-hadoop-with-sqoop-1/">Ingest data from database into Hadoop with Sqoop #1</a></h1>
+            <div class="meta">
+                <div class="authordate">
+                    <time class="timeago" datetime="2012-06-07T21:15:29+00:00">2012-06-07 21:15</time>
+                </div>
+                <div class="stats">
+                
+                    
+    
+        
+    <p>
+    
+        <a href="../posts/ingest-data-from-database-into-hadoop-with-sqoop-1/#disqus_thread" data-disqus-identifier="cache/posts/ingest-data-from-database-into-hadoop-with-sqoop-1.html">Comments</a>
+    
+
+    
+
+                
+                </p></div>
+                
+    
+    <div class="tags">
+        <ul>
+        More posts about:  
+        
+            <li><a class="tag" href="../categories/bigdata/">BigData</a></li>
+        
+        </ul>
+    </div>
+    
+
+            </div>
+            <div class="body">
+                <div><p>Sqoop is an easy tool to import data from databases to HDFS and export data from Hadoop/Hive tables to Databases. Databases has been de-facto standard for storing structured data. Running complex queries on large data in databases can be detrimental to their performance.
+It is some times useful to import the data into Hadoop for ad hoc analysis. Tools like hive, raw map-reduce can provide tremendous flexibility in performing various kinds of analysis.
+This becomes particularly useful when database has been used mostly as storage device (Ex: Storing XML or unstructured string data as clob data).</p>
+<p>Sqoop is very simple on it's face. Internally, it uses map-reduce in parallel data import from Database and utilizes JDBC connection for the purpose.</p>
+<p>I am jumping straight into using sqoop with oracle database and will leave installation for some other post.</p>
+<p>Sqoop commands are executed from command lines using following structure:</p>
+<pre class="literal-block">
+sqoop COMMAND [ARGS]
+</pre>
+<p>All available sqoop commands can be listed with: sqoop help</p>
+<p>Article focuses on importing from database specifically Oracle DB. All commands displayed multiline has to be run as a single command.</p>
+<p><em>List database schema present on Oracle server</em></p>
+<p>User credentials should have have sufficient permission to list the databases:</p>
+<pre class="literal-block">
+sqoop list-databases
+             --connect jdbc:oracle:thin:@//HOST:PORT
+             --username DBA_USER
+             --password password
+</pre>
+<p>Providing password on command line is insecure and we should be using "-P" instead. Sqoop will prompt for the password when you execute the command.</p>
+<p><em>List tables present in a Oracle DB</em></p>
+<pre class="literal-block">
+sqoop list-tables
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+</pre>
+<p><em>Run arbitrary sql command using Sqoop</em></p>
+<pre class="literal-block">
+sqoop eval
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --query "SQL QUERY"
+</pre>
+<p><em>List columns for table in Oracle DB</em></p>
+<pre class="literal-block">
+sqoop eval
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --query "SELECT  t.*  FROM  TABLENAME  t WHERE 1=0"
+</pre>
+<p><em>Importing tables from Oracle DB</em></p>
+<p>There are many destinations from importing data from Oracle DB. You can import data to :</p>
+<ul class="simple">
+<li>HDFS as raw files</li>
+<li>Hive table existing or newly created</li>
+<li>HBase tables</li>
+</ul>
+<p>I have not explored all of them but I definitely prefer storing them as raw files over hive tables. This makes it easy to define different hive table schema using external tables. You also need to ensure that the target directory in hdfs does not exist prior to running the sqoop command.
+Following will fetch all the data from the table and store it as text file in target directory in HDFS.:</p>
+<pre class="literal-block">
+hadoop fs -rmr /target/directory/in/hdfs
+
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+</pre>
+<p>The above tries to execute a query to extract column names from the table. If this is not possible then it will error out with</p>
+<pre class="literal-block">
+ERROR tool.ImportTool: Imported Failed: Attempted to generate class with no columns!
+</pre>
+<p>In that case, we have to specify the columns manually in the command.</p>
+<pre class="literal-block">
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+</pre>
+<p>The above command works well when primary key is defined for the table. If this is not specified, you will have to perform sequential import by forcing a single mapper:</p>
+<pre class="literal-block">
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             -m 1
+</pre>
+<p>or split by column in the table</p>
+<pre class="literal-block">
+sqoop import
+             --connect jdbc:oracle:thin:@//HOST:PORT/DB
+             --username DBA_USER
+             -P
+             --table TABLENAME
+             --columns "column1,column2,column3,.."
+             --as-textfile
+             --target-dir /target/directory/in/hdfs
+             --split-by COLUMNNAME
+</pre>
+<p>I will explore few other nuances in importing data into HDFS in subsequent article.</p></div>
+            </div>
+        </div>
+    
+        <div class="post">
             <h1 class="title"><a href="../posts/learning-twisted-1-reactor-basics/">Learning Twisted #1 reactor basics</a></h1>
             <div class="meta">
                 <div class="authordate">
